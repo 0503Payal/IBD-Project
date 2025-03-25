@@ -1,0 +1,378 @@
+---
+title: "GSE9452"
+author: "Payal"
+date: "2024-04-19"
+output: html_document
+---
+
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+```{r}
+BiocManager::install("affy")
+library(affy)
+celFiles3 <- list.celfiles("/Users/payalpriyadarshini/Documents/GSE9452_RAW", full.names = TRUE)
+affyBatch1 <- ReadAffy(filenames = celFiles3)
+affyBatch1 <- rma(affyBatch1)
+expressionValues1 <- exprs(affyBatch1)
+BiocManager::install("arrayQualityMetrics") #QC For THE NORMALIZED DATA
+library(arrayQualityMetrics)
+qc <- arrayQualityMetrics(affyBatch1 )
+expressionValues1 <- exprs(affyBatch1) #normalized values i.e the SERIES MATRIX IS FORMED
+head(expressionValues1)
+```
+
+#checking normalization
+
+```{r}
+#checking the normalization through a boxplot
+column_names <- colnames(expressionValues1)
+colors <- rainbow(length(column_names)) 
+
+sequential_labels1 <- seq_len(ncol(expressionValues1))
+pdf("high_quality_boxplot_GSE9452.pdf", width = 10, height = 6)
+# Create a boxplot with sequential labels
+boxplot(expressionValues1, col = colors, names = sequential_labels1, 
+        main = "Boxplot with Normalized values- GSE9452",
+        xlab = "Samples",
+        ylab = "Normalized Values",
+        cex.axis = 1.5, cex.lab = 1.5, cex.main = 1.5)
+#boxplot(expressionValues, col = colors, main = "Normalized values", names = column_names, cex.axis = 1.5, cex.lab = 1.5, cex.main = 1.5)
+dev.off()
+```
+a pdf is saved for boxplot 
+
+Creating a Heatmap of normalized data ie. the samples vs the prob ids
+```{r}
+library(ComplexHeatmap)
+install.packages("RColorBrewer")
+library(gplots)
+expressionValues1 <- expressionValues1[!duplicated(expressionValues1), ]
+expressionValues1 <- expressionValues1[complete.cases(expressionValues1), ]
+# Create a heatmap using ComplexHeatmap
+heatmap_data <- matrix(rnorm(52000), nrow = 2000, ncol = 26)
+print(heatmap_data)
+```
+ Now creating the complex heatmap with the heatmap data
+```{r}
+my_colors <- colorRampPalette(c("green", "black", "purple"))(3)
+install.packages("ComplexHeatmap")
+library(ComplexHeatmap)
+Heatmap(heatmap_data, col = my_colors, name = "Expression Values- GSE9452", show_row_names = TRUE, show_column_names = TRUE, clustering_distance_rows = "euclidean", clustering_distance_columns = "euclidean", column_title = "Samples", row_title = "Genes", top_annotation = NULL)  #hierarchical clustering
+# heat map the heatmap
+print(heatmap)
+```
+creating a top table to find gene list
+
+```{r}
+
+library(limma)
+
+metadata <- read.csv("/Users/payalpriyadarshini/Documents/Sampletable.csv")
+ConditionCD <- factor(metadata$Condition == "CD", levels = c(FALSE, TRUE))
+ConditionUC <- factor(metadata$Condition == "UC", levels = c(FALSE, TRUE))
+Conditionnormal <- factor(metadata$Condition == "normal", levels = c(FALSE, TRUE))
+
+design_matrix <- model.matrix(~ Condition, data = metadata)
+
+colnames(design_matrix)[colnames(design_matrix) == "(Intercept)"] <- "ConditionCD"
+# Assuming 'expressionValues' is your normalized expression data matrix
+fit <- lmFit(expressionValues, design_matrix)
+
+# Define the contrast matrix
+contrastMatrix <- makeContrasts(
+  CD_vs_normal = ConditionCD - Conditionnormal,
+  UC_vs_normal = ConditionUC - Conditionnormal,
+  Combined_vs_Normal = ConditionCD + ConditionUC - 2 * Conditionnormal,
+  levels = design_matrix
+)
+```
+#trying different contrasts
+contrastMatrix3 <- makeContrasts(
+  CD = ConditionCD - ConditionUC,
+  UC = ConditionUC - ConditionINF,
+  levels = design_matrix2
+)
+#fitEbayes3 <- eBayes(contrasts.fit(fit2, contrastMatrix3))
+#UC <- topTable(fitEbayes3, coef = "UC", number = Inf)
+```{r}
+# Print the contrast matrix
+print(contrastMatrix)
+
+fitEbayes <- eBayes(contrasts.fit(fit, contrastMatrix))
+
+# Extract differentially expressed genes for the first condition
+topGenes_UC <- topTable(fitEbayes, coef = "UC_vs_normal", number = Inf)
+topGenes_CD <- topTable(fitEbayes, coef = "CD_vs_normal", number = Inf)
+topGenes_Combined <- topTable(fitEbayes, coef = "Combined_vs_Normal", number = Inf)
+
+```
+removing duplicates and null values
+
+```{r}
+library(dplyr)
+
+#for prob ids as different column
+
+topGenes_CD$prob_id <- rownames(topGenes_CD)
+topGenes_CD <- topGenes_CD[, c("prob_id", setdiff(names(topGenes_CD), "prob_id"))] # shifting TO 1ST COLUMN SPACE
+rownames(topGenes_CD) <- NULL
+
+topGenes_CD <- topGenes_CD %>%
+  distinct(prob_id, .keep_all = TRUE) %>%  # Remove duplicates based on GeneID
+  na.omit()  # Remove rows with null values
+#XXXXXX
+
+topGenes_UC$prob_id <- rownames(topGenes_UC)
+topGenes_UC <- topGenes_UC[, c("prob_id", setdiff(names(topGenes_UC), "prob_id"))] # shifting TO 1ST COLUMN SPACE
+rownames(topGenes_UC) <- NULL
+
+topGenes_UC <- topGenes_UC %>%
+  distinct(prob_id, .keep_all = TRUE) %>%  # Remove duplicates based on GeneID
+  na.omit()  # Remove rows with null values
+#XXXXX
+
+topGenes_Combined$prob_id <- rownames(topGenes_Combined)
+topGenes_Combined <- topGenes_Combined[, c("prob_id", setdiff(names(topGenes_Combined), "prob_id"))] # shifting TO 1ST COLUMN SPACE
+rownames(topGenes_Combined) <- NULL
+
+
+topGenes_Combined <- topGenes_Combined %>%
+  distinct(prob_id, .keep_all = TRUE) %>%  # Remove duplicates based on GeneID
+  na.omit()  # Remove rows with null values
+# Print the filtered top table
+print(topGenes_CD)
+```
+
+GENE IDS IN PLACE OF PROB IDS
+```{r}
+BiocManager::install("hgu133plus2.db")
+library(hgu133plus2.db)
+
+```
+now load annotation file into r for gene symbols
+
+```{r}
+annotation_data <- "/Users/payalpriyadarshini/Documents/GPL8300annot.csv"
+
+# Read the annotation file into a data frame
+annotation_data <- read.csv(annotation_data)
+colnames(annotation_data)[colnames(annotation_data) == "ID"] <- "prob_id"
+
+head(annotation_data)
+```
+Next step is: MERGING AND KEEPING RELEVANT COLUMNS from annotation data and top table for volcano plots and comparrison in future
+
+```{r}
+merged_data1 <- merge(topGenes_CD, annotation_data, by = "prob_id", all.x = TRUE)
+merged_data2 <- merge(topGenes_UC, annotation_data, by = "prob_id", all.x = TRUE)
+merged_data3 <- merge(topGenes_Combined, annotation_data, by = "prob_id", all.x = TRUE)
+
+
+head(merged_data1)
+
+head(merged_data2)
+head(merged_data3)
+print(names(merged_data2)) # to see col names
+
+```
+keeping relevant columns in both results:
+
+```{r}
+result1 <- merged_data1[, c("logFC", "AveExpr", "t", "P.Value", "adj.P.Val", "B","Gene.symbol")]
+result2 <- merged_data2[, c("logFC", "AveExpr", "t", "P.Value", "adj.P.Val", "B","Gene.symbol")]
+result3 <- merged_data3[, c("logFC", "AveExpr", "t", "P.Value", "adj.P.Val", "B","Gene.symbol")]
+# Specify the column order
+new_column_order <- c("Gene.symbol", "logFC", "AveExpr", "t", "P.Value", "adj.P.Val", "B")
+
+# Reorder the columns
+generesult1 <- result1[, new_column_order]
+generesult2 <- result2[, new_column_order]
+generesult3 <- result3[, new_column_order]
+
+#removing rows with NA in GeneID (if there are any)
+generesult1 <- generesult1[complete.cases(generesult1$`Gene.symbol`), ]
+generesult2 <- generesult2[complete.cases(generesult2$`Gene.symbol`), ]
+generesult3 <- generesult3[complete.cases(generesult3$`Gene.symbol`), ]
+print(generesult2)
+```
+
+removing duplicates, null values and SAVING OUTPUT FILES
+
+```{r}
+
+generesultCD <- generesult1[!duplicated(generesult1$`Gene.symbol`), ]
+
+generesultUC <- generesult2[!duplicated(generesult2$`Gene.symbol`), ]
+
+generesultCOMB<- generesult3[!duplicated(generesult3$`Gene.symbol`), ]
+
+#saving into system
+write.csv(generesultCD, "/Users/payalpriyadarshini/Documents/resultCD_GSE6731.csv", row.names = FALSE)
+write.csv(generesultUC, "/Users/payalpriyadarshini/Documents/resultUC_GSE6731.csv", row.names = FALSE)
+write.csv(generesultCOMB, "/Users/payalpriyadarshini/Documents/resultCOMB_GSE6731.csv", row.names = FALSE)
+```
+
+
+
+
+P C A
+
+#doing PCA- principle component analysis ****
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+
+phenodata <- read.csv("Sampletable.csv")
+phenodata2 <- read.csv("Sampletable2.csv")
+
+
+# Perform PCA
+pca_result <- prcomp(t(expressionValues), scale. = TRUE)
+
+# Access the PC scores
+pc_scores <- as.data.frame(pca_result$x)
+
+# Combine PC scores with phenodata
+pc_data <- cbind(phenodata, pc_scores)
+```
+
+# Plot the PCA using all conditions
+
+```{r}
+ggplot(pc_data, aes(x = PC1, y = PC2, color = Condition)) +
+  geom_point() +
+  labs(title = "PCA Plot") +
+  theme_minimal()
+
+```
+PCA WITH NONIBD AND IBD
+```{r}
+# Combine PC scores with phenodata
+pc_data <- cbind(phenodata2, pc_scores)
+ggplot(pc_data, aes(x = PC1, y = PC2, color = Condition)) +
+  geom_point() +
+  labs(title = "PCA Plot") +
+  theme_minimal()
+```
+
+trying new methods-
+
+```{r}
+# Assuming 'pc_data' contains your combined data with PC scores
+
+library(tidyr)
+library(ggplot2)
+# Convert row names to a column**********
+library(tibble)
+pc_scores <- rownames_to_column(pc_scores, var = "SampleID")
+
+library(reshape2)
+pc_data_long <- melt(pc_scores, id.vars = "SampleID", variable.name = "PC", value.name = "Score")
+
+# Plot using ggplot
+ggplot(pc_data_long, aes(x = SampleID, y = Score, color = PC)) +
+  geom_point() +
+  labs(title = "PCA Plot") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+```
+Finally, using pc scores, plot, ibd and non ibd plots
+```{r}
+selected_data <- pc_data[, c("SampleID", "Condition", paste0("PC", 1:36))]
+
+# Replace row names with numeric identifiers
+rownames(selected_data) <- NULL
+
+library(ggplot2)
+ggplot(selected_data, aes(x = SampleID, y = PC1,color = Condition)) +  #y=PC2...and so on
+  geom_point() +
+  labs(title = "PCA Plot") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+
+
+```
+
+VENN DIAGRAMS OF CD, UC AND COMBINED
+
+```{r}
+
+install.packages("VennDiagram")
+BiocManager::install("VennDiagram") 
+BiocManager::install("VennDetail")
+library(VennDetail)
+library(VennDiagram)
+
+
+gene_lists <- list(
+  CD = generesultCD,
+  UC = generesultUC,
+  Combined = generesultCOMB
+)
+
+```
+
+
+VOLCANO PLOTS FOR GENERESULT CD, UD COMB
+
+```{r}
+write.csv(generesultCD, "/Users/payalpriyadarshini/Documents/resultCD_GSE6731.csv", row.names = FALSE)
+write.csv(generesultUC, "/Users/payalpriyadarshini/Documents/resultUC_GSE6731.csv", row.names = FALSE)
+write.csv(generesultCOMB, "/Users/payalpriyadarshini/Documents/resultCOMB_GSE6731.csv", row.names = FALSE)
+UCresult <- read.table("/Users/payalpriyadarshini/Documents/resultUC_GSE6731.csv", header = TRUE, sep= ',')
+BiocManager::install("EnhancedVolcano")
+BiocManager::install("ggrepel")
+library(EnhancedVolcano)
+#correct code
+EnhancedVolcano(UCresult,x="logFC",y="P.Value",lab=UCresult$gene.symbols,FCcutoff = 0.5, pCutoff = 0.05, title = 'GSE6731_VOLCANOPLOT1')
+EnhancedVolcano(UCresult,x="logFC",y="P.Value",lab=UCresult$gene.symbols,FCcutoff = 2, pCutoff = 0.05, title = 'GSE6731_VOLCANOPLOT2')
+```
+
+```{r}
+
+
+library(ggfortify)
+pca_res <- prcomp(t(expressionValues), scale. = TRUE)
+pc_data1 <- head(pc_data, n = nrow(pc_data) - 4)
+autoplot(pca_res, data = pc_data1, colour = 'Condition', label.size = 10) 
+
+
+```
+```{r}
+pca_plot <- autoplot(pca_res, data = pc_data1, colour = 'Condition', label.size = 10) 
+
+# Modify the point size using ggplot2
+pca_plot <- pca_plot + geom_point(aes(color = Condition), size = 8) # Adjust the size according to your preference
+
+# Display the modified PCA plot
+print(pca_plot)
+```
+ML ALGORITHMS ON THE NORMALIZED DATA
+
+
+
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
